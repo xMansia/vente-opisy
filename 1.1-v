@@ -1,0 +1,80 @@
+import pandas as pd
+from deep_translator import GoogleTranslator
+import tkinter as tk
+from tkinter import filedialog, messagebox
+from openpyxl import load_workbook
+import re
+
+
+def translate_text(text, target_language):
+    try:
+        if text:
+            # Split text by HTML tags to avoid translating them
+            parts = re.split(r'(<[^>]+>)', text)
+            translated_parts = [
+                GoogleTranslator(source='auto', target=target_language).translate(part) if not part.startswith(
+                    '<') else part for part in parts]
+            return ''.join(translated_parts)
+        return ""
+    except Exception as e:
+        print(f"Error translating text: {e}")
+        return text
+
+
+def load_and_translate_file():
+    file_path = filedialog.askopenfilename()
+    if not file_path:
+        return
+
+    try:
+        # Load the workbook and the worksheet
+        workbook = load_workbook(filename=file_path)
+        sheet = workbook.active
+
+        # Load data into pandas dataframe, starting from the third row
+        data = sheet.values
+        columns = next(data)  # First row for columns
+        columns = next(data)  # Second row for columns
+
+        df = pd.DataFrame(data, columns=columns)
+
+        # Translation mapping
+        languages = ['it', 'es', 'de', 'nl', 'pt']
+        translations = {col: col.split('_')[-1] for col in df.columns if col.split('_')[-1] in languages}
+        translations.pop('fr', None)
+
+        # Iterate over the dataframe rows and translate the necessary columns
+        for index, row in df.iterrows():
+            for lang in languages:
+                for prefix in ['title', 'description']:
+                    col_fr = f"{prefix}_fr"
+                    col_lang = f"{prefix}_{lang}"
+                    if col_fr in df.columns and col_lang in df.columns:
+                        if pd.notna(row[col_fr]) and row[col_fr].strip():
+                            print(f"Translating {col_fr} to {col_lang} for row {index}")
+                            translated_text = translate_text(row[col_fr], lang)
+                            df.at[index, col_lang] = translated_text
+
+        # Write back to the same Excel file without removing other sheets
+        for idx, col in enumerate(df.columns):
+            for row in range(len(df)):
+                sheet.cell(row=row + 3, column=idx + 1, value=df.iloc[row, idx])
+
+        workbook.save(file_path)
+        messagebox.showinfo("Success", "Translation completed and file saved successfully.")
+
+    except Exception as e:
+        messagebox.showerror("Error", f"Error processing file: {e}")
+
+
+# GUI setup
+root = tk.Tk()
+root.title("Excel Translator")
+
+frame = tk.Frame(root, padx=10, pady=10)
+frame.pack(padx=10, pady=10)
+
+button = tk.Button(frame, text="Load and Translate Excel File", command=load_and_translate_file)
+button.pack()
+
+root.mainloop()
